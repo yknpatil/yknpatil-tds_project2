@@ -8,3 +8,4 @@ numpy
 scikit-learn
 aiofiles
 python-multipart
+aiohttp
