@@ -1,3 +1,4 @@
+import os
 import asyncio
 import aiohttp
 import pandas as pd
@@ -5,22 +6,24 @@ import matplotlib.pyplot as plt
 import base64
 import io
 from scipy.stats import linregress
-import json
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Enable CORS for all origins and methods (GET, POST, etc.)
+# Enable CORS for all origins and methods including POST
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # allow requests from any origin
-    allow_methods=["*"],       # allow all HTTP methods
-    allow_headers=["*"],       # allow all headers
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
 
-AIPIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIyZjIwMDE3MjlAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.nZjYM7jpIm_XJKggJW2A3m7b5JOU0_Dx00UyrigmFOE"  # Use environment var ideally
+AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
+if not AIPIPE_TOKEN:
+    raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
+
 WIKI_URL = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
 
 async def aipipe_call(prompt: str):
@@ -35,6 +38,8 @@ async def aipipe_call(prompt: str):
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                raise HTTPException(status_code=resp.status, detail="AIPipe API error")
             resp_json = await resp.json()
             return resp_json.get("text", "")
 
@@ -70,9 +75,6 @@ def answer_questions(df: pd.DataFrame):
         answers.append(round(corr, 6))
     else:
         answers.append(None)
-
-    plot_uri = plot_rank_peak(df)
-    answers.append(plot_uri)
 
     return answers
 
@@ -111,5 +113,8 @@ async def api_handler():
     df_raw = await scrape_wikipedia_table(WIKI_URL)
     df = clean_film_data(df_raw)
     answers = answer_questions(df)
-    return JSONResponse(content=answers)
+    plot_uri = plot_rank_peak(df)
+    output = answers + [plot_uri]
+    return JSONResponse(content=output)
+
 
