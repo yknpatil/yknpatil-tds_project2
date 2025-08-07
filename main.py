@@ -5,12 +5,38 @@ import matplotlib.pyplot as plt
 import base64
 import io
 from scipy.stats import linregress
+import json
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+# Enable CORS for all origins and methods (GET, POST, etc.)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],       # allow requests from any origin
+    allow_methods=["*"],       # allow all HTTP methods
+    allow_headers=["*"],       # allow all headers
+)
+
+AIPIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIyZjIwMDE3MjlAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.nZjYM7jpIm_XJKggJW2A3m7b5JOU0_Dx00UyrigmFOE"  # Use environment var ideally
 WIKI_URL = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
+
+async def aipipe_call(prompt: str):
+    url = "https://api.aipipe.com/v1/llm/generate"
+    headers = {
+        "Authorization": f"Bearer {AIPIPE_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "prompt": prompt,
+        "max_tokens": 1000
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            resp_json = await resp.json()
+            return resp_json.get("text", "")
 
 async def scrape_wikipedia_table(url: str) -> pd.DataFrame:
     tables = pd.read_html(url)
@@ -30,20 +56,23 @@ def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
 def answer_questions(df: pd.DataFrame):
     answers = []
     count_2bn_pre2000 = df[(df['Worldwide gross'] >= 2e9) & (df['Year'] < 2000)].shape[0]
-    answers.append(f"There are {count_2bn_pre2000} movies grossing over $2 billion released before 2000.")
+    answers.append(count_2bn_pre2000)
 
     df_15bn = df[df['Worldwide gross'] > 1.5e9]
     if not df_15bn.empty:
         earliest_film = df_15bn.sort_values('Year').iloc[0]
-        answers.append(f"The earliest film to gross over $1.5 billion is \"{earliest_film['Title']}\" released in {earliest_film['Year']}.")
+        answers.append(earliest_film['Title'])
     else:
         answers.append("No films grossed over $1.5 billion.")
 
     if 'Rank' in df.columns and 'Peak' in df.columns:
         corr = df[['Rank', 'Peak']].dropna().corr().iloc[0,1]
-        answers.append(f"The correlation between Rank and Peak is {corr:.6f}.")
+        answers.append(round(corr, 6))
     else:
-        answers.append("Rank or Peak data is missing.")
+        answers.append(None)
+
+    plot_uri = plot_rank_peak(df)
+    answers.append(plot_uri)
 
     return answers
 
@@ -82,19 +111,5 @@ async def api_handler():
     df_raw = await scrape_wikipedia_table(WIKI_URL)
     df = clean_film_data(df_raw)
     answers = answer_questions(df)
-    plot_uri = plot_rank_peak(df)
+    return JSONResponse(content=answers)
 
-    # Prepare exact 4-element array response expected by evaluation:
-    count_2bn_pre2000 = int(answers[0].split()[2])  # extract number from "There are X movies..."
-    earliest_film = answers[1].split('"')[1]        # extract title from "... is "Title" ..."
-    correlation_str = answers[2].split()[-1]
-    correlation_rank_peak = float(correlation_str)
-
-    response = [
-        count_2bn_pre2000,
-        earliest_film,
-        correlation_rank_peak,
-        plot_uri
-    ]
-
-    return JSONResponse(content=response)
