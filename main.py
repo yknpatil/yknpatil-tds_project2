@@ -1,33 +1,14 @@
-import asyncio
-import aiohttp
+import io
+import base64
 import pandas as pd
 import matplotlib.pyplot as plt
-import base64
-import io
 from scipy.stats import linregress
-import json
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-AIPIPE_TOKEN = "YOUR_API_TOKEN_HERE"  # Use environment var ideally
 WIKI_URL = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
-
-async def aipipe_call(prompt: str):
-    url = "https://api.aipipe.com/v1/llm/generate"
-    headers = {
-        "Authorization": f"Bearer {AIPIPE_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "prompt": prompt,
-        "max_tokens": 1000
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            resp_json = await resp.json()
-            return resp_json.get("text", "")
 
 async def scrape_wikipedia_table(url: str) -> pd.DataFrame:
     tables = pd.read_html(url)
@@ -45,28 +26,28 @@ def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def answer_questions(df: pd.DataFrame):
-    answers = []
     count_2bn_pre2000 = df[(df['Worldwide gross'] >= 2e9) & (df['Year'] < 2000)].shape[0]
-    answers.append(f"There are {count_2bn_pre2000} movies grossing over $2 billion released before 2000.")
 
     df_15bn = df[df['Worldwide gross'] > 1.5e9]
     if not df_15bn.empty:
-        earliest_film = df_15bn.sort_values('Year').iloc[0]
-        answers.append(f"The earliest film to gross over $1.5 billion is \"{earliest_film['Title']}\" released in {earliest_film['Year']}.")
+        earliest_film = df_15bn.sort_values('Year').iloc[0]['Title']
     else:
-        answers.append("No films grossed over $1.5 billion.")
+        earliest_film = None
 
     if 'Rank' in df.columns and 'Peak' in df.columns:
         corr = df[['Rank', 'Peak']].dropna().corr().iloc[0,1]
-        answers.append(f"The correlation between Rank and Peak is {corr:.3f}.")
     else:
-        answers.append("Rank or Peak data is missing.")
+        corr = None
 
-    return answers
+    return {
+        "count_2bn_pre2000": count_2bn_pre2000,
+        "earliest_film": earliest_film,
+        "correlation_rank_peak": corr
+    }
 
 def plot_rank_peak(df: pd.DataFrame):
     if 'Rank' not in df.columns or 'Peak' not in df.columns:
-        return "Insufficient data to plot."
+        return None
 
     df_clean = df[['Rank', 'Peak']].dropna()
     x = df_clean['Rank']
@@ -95,10 +76,33 @@ def plot_rank_peak(df: pd.DataFrame):
     return data_uri
 
 @app.post("/api")
-async def api_handler():
-    df_raw = await scrape_wikipedia_table(WIKI_URL)
-    df = clean_film_data(df_raw)
+async def api_handler(
+    questions_file: UploadFile = File(...),
+    image_file: UploadFile = File(None),
+    data_file: UploadFile = File(None)
+):
+    # Read questions.txt
+    questions_text = await questions_file.read()
+    questions = questions_text.decode('utf-8').splitlines()
+
+    # Load CSV or fallback to scrape
+    if data_file:
+        data_csv = await data_file.read()
+        df = pd.read_csv(io.BytesIO(data_csv))
+    else:
+        df_raw = await scrape_wikipedia_table(WIKI_URL)
+        df = clean_film_data(df_raw)
+
+    # Here, you could parse and answer based on 'questions'.
+    # For now, answer using your current logic (fixed questions).
+    # To do: customize logic to handle 'questions' list if needed.
+
     answers = answer_questions(df)
     plot_uri = plot_rank_peak(df)
-    output = answers + [plot_uri]
-    return JSONResponse(content=output)
+
+    response = {
+        "answers": answers,
+        "scatterplot_base64": plot_uri
+    }
+
+    return JSONResponse(content=response)
