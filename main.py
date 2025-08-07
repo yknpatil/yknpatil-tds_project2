@@ -1,21 +1,22 @@
 import os
+import io
+import json
+import base64
 import asyncio
 import aiohttp
 import pandas as pd
 import matplotlib.pyplot as plt
-import base64
-import io
 from scipy.stats import linregress
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Enable CORS for all origins and methods including POST
+# Enable CORS for all origins (adjust for security in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -24,9 +25,10 @@ AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
 if not AIPIPE_TOKEN:
     raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
 
-WIKI_URL = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
-
-async def aipipe_call(prompt: str):
+async def call_aipipe(prompt: str) -> str:
+    """
+    Call the AIPipe API with the prompt and return the generated text.
+    """
     url = "https://api.aipipe.com/v1/llm/generate"
     headers = {
         "Authorization": f"Bearer {AIPIPE_TOKEN}",
@@ -39,95 +41,133 @@ async def aipipe_call(prompt: str):
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as resp:
             if resp.status != 200:
-                raise HTTPException(status_code=resp.status, detail="AIPipe API error")
+                detail = await resp.text()
+                raise HTTPException(status_code=resp.status, detail=f"AIPipe API error: {detail}")
             resp_json = await resp.json()
-            return resp_json.get("text", "")
+            return resp_json.get("text", "").strip()
 
-async def scrape_wikipedia_table(url: str) -> pd.DataFrame:
-    tables = pd.read_html(url)
-    df = tables[0]
-    return df
+def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
+    """
+    Load a file into a Pandas DataFrame based on file extension.
+    Supports CSV, JSON, XLS/XLSX.
+    """
+    try:
+        if filename.endswith('.csv'):
+            return pd.read_csv(io.BytesIO(content))
+        elif filename.endswith('.json'):
+            data = json.loads(content.decode())
+            return pd.json_normalize(data)
+        elif filename.endswith(('.xlsx', '.xls')):
+            return pd.read_excel(io.BytesIO(content))
+        else:
+            raise ValueError(f"Unsupported file extension: {filename}")
+    except Exception as e:
+        raise ValueError(f"Failed to load file {filename}: {e}")
 
-def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.rename(columns=lambda x: x.strip())
+def summarize_dataframe(df: pd.DataFrame) -> str:
+    """
+    Return a textual summary of the dataframe:
+    columns, data types, and basic descriptive statistics.
+    """
+    summary = f"Columns: {', '.join(df.columns)}\n"
+    summary += f"Data Types:\n{df.dtypes.to_string()}\n"
+    summary += f"Description:\n{df.describe(include='all').to_string()}"
+    return summary
 
-    if 'Worldwide gross' in df.columns:
-        # まず文字列でクリーニング（$ やカンマ削除）
-        df['Worldwide gross'] = df['Worldwide gross'].astype(str).str.replace(r'[\$,]', '', regex=True)
-        
-        # 数値に変換できないものは NaN にする（←ここがポイント！）
-        df['Worldwide gross'] = pd.to_numeric(df['Worldwide gross'], errors='coerce')
+def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str) -> str:
+    """
+    Plot scatterplot with dotted red regression line,
+    encode the image as base64 data URI (under 100kB).
+    """
+    df_clean = df[[x_col, y_col]].dropna()
+    if df_clean.empty:
+        return "No data to plot."
 
-    if 'Year' in df.columns:
-        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+    slope, intercept, _, _, _ = linregress(df_clean[x_col], df_clean[y_col])
 
-    if 'Rank' in df.columns:
-        df['Rank'] = pd.to_numeric(df['Rank'], errors='coerce')
-
-    if 'Peak' in df.columns:
-        df['Peak'] = pd.to_numeric(df['Peak'], errors='coerce')
-
-    return df
-
-
-
-def answer_questions(df: pd.DataFrame):
-    answers = []
-    count_2bn_pre2000 = df[(df['Worldwide gross'] >= 2e9) & (df['Year'] < 2000)].shape[0]
-    answers.append(count_2bn_pre2000)
-
-    df_15bn = df[df['Worldwide gross'] > 1.5e9]
-    if not df_15bn.empty:
-        earliest_film = df_15bn.sort_values('Year').iloc[0]
-        answers.append(earliest_film['Title'])
-    else:
-        answers.append("No films grossed over $1.5 billion.")
-
-    if 'Rank' in df.columns and 'Peak' in df.columns:
-        corr = df[['Rank', 'Peak']].dropna().corr().iloc[0,1]
-        answers.append(round(corr, 6))
-    else:
-        answers.append(None)
-
-    return answers
-
-def plot_rank_peak(df: pd.DataFrame):
-    if 'Rank' not in df.columns or 'Peak' not in df.columns:
-        return "Insufficient data to plot."
-
-    df_clean = df[['Rank', 'Peak']].dropna()
-    x = df_clean['Rank']
-    y = df_clean['Peak']
-    slope, intercept, _, _, _ = linregress(x, y)
-
-    plt.figure(figsize=(6,4))
-    plt.scatter(x, y, label='Data points')
-    plt.plot(x, intercept + slope*x, 'r--', label='Regression line')
-    plt.xlabel('Rank')
-    plt.ylabel('Peak')
-    plt.title('Scatterplot of Rank vs Peak with Regression Line')
+    plt.figure(figsize=(6, 4))
+    plt.scatter(df_clean[x_col], df_clean[y_col], label='Data points')
+    plt.plot(df_clean[x_col], intercept + slope * df_clean[x_col], 'r--', label='Regression line')
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(f'Scatterplot of {x_col} vs {y_col} with Regression Line')
     plt.legend()
 
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=100)
     plt.close()
     buf.seek(0)
-    img_bytes = buf.read()
 
-    b64_str = base64.b64encode(img_bytes).decode('utf-8')
-    data_uri = f"data:image/png;base64,{b64_str}"
-
+    b64_img = base64.b64encode(buf.read()).decode('utf-8')
+    data_uri = f"data:image/png;base64,{b64_img}"
     if len(data_uri) > 100000:
         return "Image size exceeds limit."
     return data_uri
 
-@app.post("/api")
-async def api_handler():
-    df_raw = await scrape_wikipedia_table(WIKI_URL)
-    df = clean_film_data(df_raw)
-    answers = answer_questions(df)
-    plot_uri = plot_rank_peak(df)
-    output = answers + [plot_uri]
-    return JSONResponse(content=output)
+@app.post("/api/")
+async def analyze(
+    questions: UploadFile = File(...),
+    files: list[UploadFile] = File(default=[])
+):
+    """
+    Main API endpoint that accepts:
+    - questions.txt file containing questions (mandatory)
+    - zero or more additional data files (CSV, JSON, XLSX)
+    
+    Returns a JSON array with answers to each question.
+    """
+    question_text = (await questions.read()).decode()
+    question_lines = [line.strip() for line in question_text.splitlines() if line.strip()]
+    if not question_lines:
+        raise HTTPException(status_code=400, detail="questions.txt is empty")
+
+    dataframes = []
+    for file in files:
+        content = await file.read()
+        try:
+            df = load_file_to_dataframe(file.filename, content)
+            dataframes.append(df)
+        except Exception:
+            # Ignore files that cannot be loaded
+            continue
+
+    # Use first loaded dataframe if any
+    df = dataframes[0] if dataframes else pd.DataFrame()
+
+    answers = []
+    for question in question_lines:
+        q_lower = question.lower()
+        # Simple heuristic: if question requests scatterplot + regression
+        if "scatterplot" in q_lower and ("regression" in q_lower or "regression line" in q_lower):
+            import re
+            # Try to extract two column names from question
+            cols = re.findall(r'scatterplot.*of ([\w]+) and ([\w]+)', q_lower)
+            if cols:
+                x_col, y_col = cols[0]
+                if x_col in df.columns and y_col in df.columns:
+                    answer = plot_scatter_with_regression(df, x_col, y_col)
+                else:
+                    answer = f"Columns {x_col} or {y_col} not found in data."
+            else:
+                # fallback to default columns if present
+                if 'Rank' in df.columns and 'Peak' in df.columns:
+                    answer = plot_scatter_with_regression(df, 'Rank', 'Peak')
+                else:
+                    answer = "Could not parse columns for scatterplot."
+        else:
+            # For normal questions, build prompt with data summary + question for LLM
+            if df.empty:
+                prompt = f"Answer this question without any data:\n{question}"
+            else:
+                summary = summarize_dataframe(df)
+                prompt = f"Data summary:\n{summary}\n\nQuestion:\n{question}\nAnswer:"
+            try:
+                answer = await call_aipipe(prompt)
+            except Exception as e:
+                answer = f"Error getting answer from AIPipe: {str(e)}"
+        answers.append(answer)
+
+    return JSONResponse(content=answers)
+
 
 
