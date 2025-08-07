@@ -50,13 +50,22 @@ async def scrape_wikipedia_table(url: str) -> pd.DataFrame:
 
 def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=lambda x: x.strip())
-    df['Worldwide gross'] = df['Worldwide gross'].str.replace(r'[\$,]', '', regex=True).astype(float)
-    df['Year'] = df['Year'].astype(int)
+
+    if 'Worldwide gross' in df.columns:
+        df['Worldwide gross'] = df['Worldwide gross'].replace(r'[\$,]', '', regex=True)
+        df['Worldwide gross'] = pd.to_numeric(df['Worldwide gross'], errors='coerce')  # ← ここ重要！
+
+    if 'Year' in df.columns:
+        df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
+
     if 'Rank' in df.columns:
         df['Rank'] = pd.to_numeric(df['Rank'], errors='coerce')
+
     if 'Peak' in df.columns:
         df['Peak'] = pd.to_numeric(df['Peak'], errors='coerce')
+
     return df
+
 
 def answer_questions(df: pd.DataFrame):
     answers = []
