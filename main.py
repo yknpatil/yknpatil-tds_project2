@@ -2,7 +2,7 @@ import os
 import io
 import json
 import base64
-import asyncio
+import re
 import aiohttp
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -13,10 +13,10 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Enable CORS for all origins (adjust for security in production)
+# Enable CORS for all origins (adjust in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -26,9 +26,6 @@ if not AIPIPE_TOKEN:
     raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
 
 async def call_aipipe(prompt: str) -> str:
-    """
-    Call the AIPipe API with the prompt and return the generated text.
-    """
     url = "https://api.aipipe.com/v1/llm/generate"
     headers = {
         "Authorization": f"Bearer {AIPIPE_TOKEN}",
@@ -47,10 +44,6 @@ async def call_aipipe(prompt: str) -> str:
             return resp_json.get("text", "").strip()
 
 def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
-    """
-    Load a file into a Pandas DataFrame based on file extension.
-    Supports CSV, JSON, XLS/XLSX.
-    """
     try:
         if filename.endswith('.csv'):
             return pd.read_csv(io.BytesIO(content))
@@ -65,20 +58,12 @@ def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
         raise ValueError(f"Failed to load file {filename}: {e}")
 
 def summarize_dataframe(df: pd.DataFrame) -> str:
-    """
-    Return a textual summary of the dataframe:
-    columns, data types, and basic descriptive statistics.
-    """
     summary = f"Columns: {', '.join(df.columns)}\n"
     summary += f"Data Types:\n{df.dtypes.to_string()}\n"
     summary += f"Description:\n{df.describe(include='all').to_string()}"
     return summary
 
 def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str) -> str:
-    """
-    Plot scatterplot with dotted red regression line,
-    encode the image as base64 data URI (under 100kB).
-    """
     df_clean = df[[x_col, y_col]].dropna()
     if df_clean.empty:
         return "No data to plot."
@@ -104,18 +89,11 @@ def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str) -> st
         return "Image size exceeds limit."
     return data_uri
 
-@app.post("/api/")
+@app.post("/api")
 async def analyze(
     questions: UploadFile = File(...),
     files: list[UploadFile] = File(default=[])
 ):
-    """
-    Main API endpoint that accepts:
-    - questions.txt file containing questions (mandatory)
-    - zero or more additional data files (CSV, JSON, XLSX)
-    
-    Returns a JSON array with answers to each question.
-    """
     question_text = (await questions.read()).decode()
     question_lines = [line.strip() for line in question_text.splitlines() if line.strip()]
     if not question_lines:
@@ -128,19 +106,15 @@ async def analyze(
             df = load_file_to_dataframe(file.filename, content)
             dataframes.append(df)
         except Exception:
-            # Ignore files that cannot be loaded
+            # skip files that can't be loaded
             continue
 
-    # Use first loaded dataframe if any
     df = dataframes[0] if dataframes else pd.DataFrame()
 
     answers = []
     for question in question_lines:
         q_lower = question.lower()
-        # Simple heuristic: if question requests scatterplot + regression
         if "scatterplot" in q_lower and ("regression" in q_lower or "regression line" in q_lower):
-            import re
-            # Try to extract two column names from question
             cols = re.findall(r'scatterplot.*of ([\w]+) and ([\w]+)', q_lower)
             if cols:
                 x_col, y_col = cols[0]
@@ -149,13 +123,11 @@ async def analyze(
                 else:
                     answer = f"Columns {x_col} or {y_col} not found in data."
             else:
-                # fallback to default columns if present
                 if 'Rank' in df.columns and 'Peak' in df.columns:
                     answer = plot_scatter_with_regression(df, 'Rank', 'Peak')
                 else:
                     answer = "Could not parse columns for scatterplot."
         else:
-            # For normal questions, build prompt with data summary + question for LLM
             if df.empty:
                 prompt = f"Answer this question without any data:\n{question}"
             else:
@@ -168,6 +140,8 @@ async def analyze(
         answers.append(answer)
 
     return JSONResponse(content=answers)
+
+
 
 
 
