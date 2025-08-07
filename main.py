@@ -52,8 +52,11 @@ def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=lambda x: x.strip())
 
     if 'Worldwide gross' in df.columns:
-        df['Worldwide gross'] = df['Worldwide gross'].replace(r'[\$,]', '', regex=True)
-        df['Worldwide gross'] = pd.to_numeric(df['Worldwide gross'], errors='coerce')  # ← ここ重要！
+        # まず文字列でクリーニング（$ やカンマ削除）
+        df['Worldwide gross'] = df['Worldwide gross'].astype(str).str.replace(r'[\$,]', '', regex=True)
+        
+        # 数値に変換できないものは NaN にする（←ここがポイント！）
+        df['Worldwide gross'] = pd.to_numeric(df['Worldwide gross'], errors='coerce')
 
     if 'Year' in df.columns:
         df['Year'] = pd.to_numeric(df['Year'], errors='coerce').astype('Int64')
@@ -65,6 +68,7 @@ def clean_film_data(df: pd.DataFrame) -> pd.DataFrame:
         df['Peak'] = pd.to_numeric(df['Peak'], errors='coerce')
 
     return df
+
 
 
 def answer_questions(df: pd.DataFrame):
