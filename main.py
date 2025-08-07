@@ -21,21 +21,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
-if not AIPIPE_TOKEN:
-    raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
+# Use the new environment variable name
+AIPROXY_RUBRIC_TOKEN = os.getenv("AIPROXY_RUBRIC_TOKEN")
+if not AIPROXY_RUBRIC_TOKEN:
+    raise RuntimeError("AIPROXY_RUBRIC_TOKEN environment variable is not set")
 
 async def call_aipipe(prompt: str) -> str:
-    # 1. Correct the API URL to the OpenAI-compatible endpoint
+    # Corrected URL for the AIProxy service
     url = "https://aipipe.org/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {AIPIPE_TOKEN}",
+        # Use the new token for authorization
+        "Authorization": f"Bearer {AIPROXY_RUBRIC_TOKEN}",
         "Content-Type": "application/json"
     }
     
-    # 2. Update the payload to match the OpenAI 'chat completions' format
     payload = {
-        # Specify a model name supported by AIPipe
         "model": "openai/gpt-4.1-nano",
         "messages": [
             {"role": "user", "content": prompt}
@@ -48,19 +48,18 @@ async def call_aipipe(prompt: str) -> str:
             async with session.post(url, headers=headers, json=payload, timeout=30) as resp:
                 if resp.status != 200:
                     detail = await resp.text()
-                    raise HTTPException(status_code=resp.status, detail=f"AIPipe API error: {detail}")
+                    raise HTTPException(status_code=resp.status, detail=f"AI Proxy API error: {detail}")
                 
                 resp_json = await resp.json()
                 
-                # 3. Correctly parse the API response to extract the content
                 try:
                     text_content = resp_json['choices'][0]['message']['content'].strip()
                     return text_content
                 except (KeyError, IndexError) as e:
-                    raise HTTPException(status_code=500, detail=f"Could not parse response from AIPipe: {e}")
+                    raise HTTPException(status_code=500, detail=f"Could not parse response from AI Proxy: {e}")
                     
         except aiohttp.ClientError as e:
-            raise HTTPException(status_code=500, detail=f"AIPipe connection error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"AI Proxy connection error: {str(e)}")
 
 def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
     try:
@@ -87,7 +86,7 @@ def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str) -> st
     if df_clean.empty:
         return "No data to plot."
 
-    slope, intercept, _, _, _ = linregress(df_clean[x_col], df_clean[y_clean])
+    slope, intercept, _, _, _ = linregress(df_clean[x_col], df_clean[y_col])
 
     plt.figure(figsize=(6, 4))
     plt.scatter(df_clean[x_col], df_clean[y_col], label='Data points')
@@ -155,12 +154,8 @@ async def analyze(
             try:
                 answer = await call_aipipe(prompt)
             except Exception as e:
-                answer = f"Error getting answer from AIPipe: {str(e)}"
+                answer = f"Error getting answer from AI Proxy: {str(e)}"
         answers.append(answer)
 
     return JSONResponse(content=answers)
-
-
-
-
 
