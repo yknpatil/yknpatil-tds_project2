@@ -26,7 +26,7 @@ if not AIPIPE_TOKEN:
     raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
 
 async def call_aipipe(prompt: str) -> str:
-    url = "https://api.aipipe.com/v1/llm/generate"
+    url = "https://aipipe.org/v1/llm/generate"
     headers = {
         "Authorization": f"Bearer {AIPIPE_TOKEN}",
         "Content-Type": "application/json"
@@ -36,12 +36,15 @@ async def call_aipipe(prompt: str) -> str:
         "max_tokens": 1000
     }
     async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                detail = await resp.text()
-                raise HTTPException(status_code=resp.status, detail=f"AIPipe API error: {detail}")
-            resp_json = await resp.json()
-            return resp_json.get("text", "").strip()
+        try:
+            async with session.post(url, headers=headers, json=payload, timeout=30) as resp:
+                if resp.status != 200:
+                    detail = await resp.text()
+                    raise HTTPException(status_code=resp.status, detail=f"AIPipe API error: {detail}")
+                resp_json = await resp.json()
+                return resp_json.get("text", "").strip()
+        except aiohttp.ClientError as e:
+            raise HTTPException(status_code=500, detail=f"AIPipe connection error: {str(e)}")
 
 def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
     try:
