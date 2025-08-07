@@ -26,7 +26,7 @@ if not AIPIPE_TOKEN:
     raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
 
 async def call_aipipe(prompt: str) -> str:
-    url = "https://aipipe.org/v1/llm/generate"
+    url = "https://aipipe.org/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {AIPIPE_TOKEN}",
         "Content-Type": "application/json"
