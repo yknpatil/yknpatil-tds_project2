@@ -21,22 +21,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Use the new environment variable name
-AIPROXY_RUBRIC_TOKEN = os.getenv("AIPROXY_RUBRIC_TOKEN")
-if not AIPROXY_RUBRIC_TOKEN:
-    raise RuntimeError("AIPROXY_RUBRIC_TOKEN environment variable is not set")
+# Use the environment variable name you've registered on Render
+AIPIPE_TOKEN = os.getenv("AIPIPE_TOKEN")
+if not AIPIPE_TOKEN:
+    raise RuntimeError("AIPIPE_TOKEN environment variable is not set")
 
 async def call_aipipe(prompt: str) -> str:
-    # Corrected URL for the AIProxy service
-    url = "https://aipipe.org/openai/v1/chat/completions"
+    # Use the correct, active AI Pipe URL for OpenRouter
+    url = "https://aipipe.org/openrouter/v1/chat/completions"
     headers = {
-        # Use the new token for authorization
-        "Authorization": f"Bearer {AIPROXY_RUBRIC_TOKEN}",
+        "Authorization": f"Bearer {AIPIPE_TOKEN}",
         "Content-Type": "application/json"
     }
     
+    # Correct payload for the OpenRouter chat completions endpoint
     payload = {
-        "model": "openai/gpt-4.1-nano",
+        "model": "openai/gpt-4.1-nano", # Using a model specified in the documentation
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -48,7 +48,7 @@ async def call_aipipe(prompt: str) -> str:
             async with session.post(url, headers=headers, json=payload, timeout=30) as resp:
                 if resp.status != 200:
                     detail = await resp.text()
-                    raise HTTPException(status_code=resp.status, detail=f"AI Proxy API error: {detail}")
+                    raise HTTPException(status_code=resp.status, detail=f"AI Pipe API error: {detail}")
                 
                 resp_json = await resp.json()
                 
@@ -56,10 +56,10 @@ async def call_aipipe(prompt: str) -> str:
                     text_content = resp_json['choices'][0]['message']['content'].strip()
                     return text_content
                 except (KeyError, IndexError) as e:
-                    raise HTTPException(status_code=500, detail=f"Could not parse response from AI Proxy: {e}")
+                    raise HTTPException(status_code=500, detail=f"Could not parse response from AI Pipe: {e}")
                     
         except aiohttp.ClientError as e:
-            raise HTTPException(status_code=500, detail=f"AI Proxy connection error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"AI Pipe connection error: {str(e)}")
 
 def load_file_to_dataframe(filename: str, content: bytes) -> pd.DataFrame:
     try:
@@ -154,8 +154,7 @@ async def analyze(
             try:
                 answer = await call_aipipe(prompt)
             except Exception as e:
-                answer = f"Error getting answer from AI Proxy: {str(e)}"
+                answer = f"Error getting answer from AI Pipe: {str(e)}"
         answers.append(answer)
 
     return JSONResponse(content=answers)
-
