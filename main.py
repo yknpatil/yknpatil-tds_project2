@@ -184,8 +184,7 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 # API Endpoint
 # ======================
-from fastapi import Request, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+app = FastAPI()
 
 @app.post("/api/")
 async def handle_request(request: Request):
@@ -195,15 +194,16 @@ async def handle_request(request: Request):
 
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
-            if file.filename.lower() == "question.txt":  # filename match
+            if key == "questions.txt":  # form field name to find questions.txt
                 content = await file.read()
                 questions_text = content.decode("utf-8", errors="ignore")
             else:
                 attachments[file.filename] = file
 
     if not questions_text:
-        raise HTTPException(400, "question.txt required")
+        raise HTTPException(400, "questions.txt required")
 
+    # Process questions_text and attachments here
     try:
         plan = await interpret_instructions(questions_text)
         context = await fetch_and_prepare(plan, attachments)
@@ -215,3 +215,4 @@ async def handle_request(request: Request):
         if fast and is_json_string(fast):
             return JSONResponse(json.loads(fast))
         return JSONResponse("Sorry I cannot find the answer")
+
