@@ -184,18 +184,25 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 # API Endpoint
 # ======================
+from fastapi import Request, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+
 @app.post("/api/")
-async def handle_request(files: List[UploadFile] = File(...)):
+async def handle_request(request: Request):
+    form = await request.form()
     questions_text = None
-    attachments: Dict[str, UploadFile] = {}
-    for f in files:
-        if f.filename.lower() == "questions.txt":
-            content = await f.read()
-            questions_text = content.decode("utf-8", errors="ignore")
-        else:
-            attachments[f.filename] = f
+    attachments = {}
+
+    for key, file in form.multi_items():
+        if isinstance(file, UploadFile):
+            if file.filename.lower() == "question.txt":  # filename match
+                content = await file.read()
+                questions_text = content.decode("utf-8", errors="ignore")
+            else:
+                attachments[file.filename] = file
+
     if not questions_text:
-        raise HTTPException(400, "questions.txt required")
+        raise HTTPException(400, "question.txt required")
 
     try:
         plan = await interpret_instructions(questions_text)
@@ -203,7 +210,6 @@ async def handle_request(files: List[UploadFile] = File(...)):
         answer = await answer_with_llm(plan, context)
         return JSONResponse(answer)
     except Exception:
-        # Fallback fast extract
         context_text = context.get("html", "")[:4000]
         fast = await llm_extract_fast(context_text, questions_text)
         if fast and is_json_string(fast):
