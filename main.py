@@ -203,10 +203,11 @@ async def handle_request(request: Request):
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
             print(f"Processing UploadFile: key={key}, filename={file.filename}")
-            if key == "questions.txt":   # ここがcurlの-F "questions.txt=@questions.txt"のkeyに対応
+            if key == "questions.txt":
                 content = await file.read()
-                print(f"Received questions.txt content length: {len(content)}")
                 questions_text = content.decode("utf-8", errors="ignore")
+                print(f"questions.txt content length: {len(questions_text)}")
+                print(f"questions.txt content preview:\n{questions_text[:100]}")
             else:
                 attachments[file.filename] = file
 
