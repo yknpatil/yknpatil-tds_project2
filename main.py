@@ -190,6 +190,7 @@ from fastapi.responses import JSONResponse
 @app.post("/api/")
 async def handle_request(request: Request):
     form = await request.form()
+    print("Received form keys:", list(form.keys()))
     questions_text = None
     attachments = {}
 
