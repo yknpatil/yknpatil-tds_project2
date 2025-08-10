@@ -190,18 +190,23 @@ app = FastAPI()
 async def handle_request(request: Request):
     form = await request.form()
     print("Received form keys:", list(form.keys()))
+    for key, value in form.multi_items():
+        print(f"Key: {key}, Value type: {type(value)}")
+
     questions_text = None
     attachments = {}
 
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
-            if key == "questions.txt":  # form field name to find questions.txt
+            print(f"Processing UploadFile: key={key}, filename={file.filename}")
+            if key == "questions.txt":
                 content = await file.read()
                 questions_text = content.decode("utf-8", errors="ignore")
             else:
                 attachments[file.filename] = file
 
     if not questions_text:
+        print("questions.txt not found in form")
         raise HTTPException(400, "questions.txt required")
 
     # Process questions_text and attachments here
