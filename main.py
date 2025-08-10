@@ -203,7 +203,7 @@ async def handle_request(request: Request):
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
             print(f"Processing UploadFile: key={key}, filename={file.filename}")
-            if file.filename == "questions.txt":  # ← 修正ポイント
+            if key in ("questions.txt", "questions"):
                 content = await file.read()
                 questions_text = content.decode("utf-8", errors="ignore")
                 print(f"questions.txt content length: {len(questions_text)}")
@@ -227,5 +227,3 @@ async def handle_request(request: Request):
         if fast and is_json_string(fast):
             return JSONResponse(json.loads(fast))
         return JSONResponse({"detail": "Sorry I cannot find the answer"})
-
-
