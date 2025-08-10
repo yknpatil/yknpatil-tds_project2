@@ -201,7 +201,9 @@ async def handle_request(request: Request):
             print(f"Processing UploadFile: key={key}, filename={file.filename}")
             if key == "questions.txt":
                 content = await file.read()
+                print(f"Received questions.txt content length: {len(content)}")
                 questions_text = content.decode("utf-8", errors="ignore")
+
             else:
                 attachments[file.filename] = file
 
