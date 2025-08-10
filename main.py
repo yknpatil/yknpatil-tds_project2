@@ -203,7 +203,7 @@ async def handle_request(request: Request):
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
             print(f"Processing UploadFile: key={key}, filename={file.filename}")
-            if key == "questions.txt":
+            if file.filename == "questions.txt":  # ← 修正ポイント
                 content = await file.read()
                 questions_text = content.decode("utf-8", errors="ignore")
                 print(f"questions.txt content length: {len(questions_text)}")
