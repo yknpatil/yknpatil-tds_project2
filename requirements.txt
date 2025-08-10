@@ -7,3 +7,8 @@ scipy
 python-multipart
 numpy
 lxml
+beautifulsoup4
+Pillow
+requests
+pydantic
+typing-extensions
