@@ -184,6 +184,10 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 # API Endpoint
 # ======================
+from fastapi import FastAPI, Request, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+import json
+
 app = FastAPI()
 
 @app.post("/api/")
@@ -199,28 +203,28 @@ async def handle_request(request: Request):
     for key, file in form.multi_items():
         if isinstance(file, UploadFile):
             print(f"Processing UploadFile: key={key}, filename={file.filename}")
-            if key == "questions.txt":
+            if key == "questions.txt":   # ここがcurlの-F "questions.txt=@questions.txt"のkeyに対応
                 content = await file.read()
                 print(f"Received questions.txt content length: {len(content)}")
                 questions_text = content.decode("utf-8", errors="ignore")
-
             else:
                 attachments[file.filename] = file
 
     if not questions_text:
         print("questions.txt not found in form")
-        raise HTTPException(400, "questions.txt required")
+        raise HTTPException(status_code=400, detail="questions.txt required")
 
-    # Process questions_text and attachments here
     try:
         plan = await interpret_instructions(questions_text)
         context = await fetch_and_prepare(plan, attachments)
         answer = await answer_with_llm(plan, context)
         return JSONResponse(answer)
-    except Exception:
-        context_text = context.get("html", "")[:4000]
+    except Exception as e:
+        print(f"Exception: {e}")
+        context_text = context.get("html", "")[:4000] if 'context' in locals() else ""
         fast = await llm_extract_fast(context_text, questions_text)
         if fast and is_json_string(fast):
             return JSONResponse(json.loads(fast))
-        return JSONResponse("Sorry I cannot find the answer")
+        return JSONResponse({"detail": "Sorry I cannot find the answer"})
+
 
