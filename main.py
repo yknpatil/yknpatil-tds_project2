@@ -184,40 +184,26 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 # API Endpoint
 # ======================
-from fastapi import FastAPI, Request, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 import json
 
 app = FastAPI()
 
 @app.post("/api/")
-async def handle_request(request: Request):
-    form = await request.form()
-    print("Received form keys:", list(form.keys()))
-    for key, value in form.multi_items():
-        print(f"Key: {key}, Value type: {type(value)}")
-
-    questions_text = None
-    attachments = {}
-
-    for key, file in form.multi_items():
-        if isinstance(file, UploadFile):
-            print(f"Processing UploadFile: key={key}, filename={file.filename}")
-            if key in ("questions.txt", "questions"):
-                content = await file.read()
-                questions_text = content.decode("utf-8", errors="ignore")
-                print(f"questions.txt content length: {len(questions_text)}")
-                print(f"questions.txt content preview:\n{questions_text[:100]}")
-            else:
-                attachments[file.filename] = file
+async def handle_request(questions_txt: UploadFile = File(...)):
+    print(f"Received file: {questions_txt.filename}")
+    content = await questions_txt.read()
+    questions_text = content.decode("utf-8", errors="ignore")
+    print(f"questions.txt content length: {len(questions_text)}")
+    print(f"questions.txt content preview:\n{questions_text[:100]}")
 
     if not questions_text:
-        print("questions.txt not found in form")
         raise HTTPException(status_code=400, detail="questions.txt required")
 
     try:
         plan = await interpret_instructions(questions_text)
-        context = await fetch_and_prepare(plan, attachments)
+        context = await fetch_and_prepare(plan, {})
         answer = await answer_with_llm(plan, context)
         return JSONResponse(answer)
     except Exception as e:
@@ -227,3 +213,4 @@ async def handle_request(request: Request):
         if fast and is_json_string(fast):
             return JSONResponse(json.loads(fast))
         return JSONResponse({"detail": "Sorry I cannot find the answer"})
+
