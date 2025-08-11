@@ -184,16 +184,23 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 # API Endpoint
 # ======================
+app = FastAPI()
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 import json
+from typing import Optional # Optionalをインポート
 
-app = FastAPI()
+# ... (既存のFastAPIとCORSの設定、LLM関連の関数など) ...
 
 @app.post("/api/")
-async def handle_request(questions_txt: UploadFile = File(...)):
-    print(f"Received file: {questions_dot_txt.filename}")
-    content = await questions_txt.read()
+async def handle_request(
+    questions_file: UploadFile = File(..., alias="questions.txt"),
+    image_file: Optional[UploadFile] = File(None, alias="image.png"), # Optionalにして、画像がない場合も対応
+    data_file: Optional[UploadFile] = File(None, alias="data.csv")   # Optionalにして、CSVがない場合も対応
+):
+    print(f"Received file: {questions_file.filename}")
+    content = await questions_file.read()
     questions_text = content.decode("utf-8", errors="ignore")
     print(f"questions.txt content length: {len(questions_text)}")
     print(f"questions.txt content preview:\n{questions_text[:100]}")
@@ -201,9 +208,19 @@ async def handle_request(questions_txt: UploadFile = File(...)):
     if not questions_text:
         raise HTTPException(status_code=400, detail="questions.txt required")
 
+    # ここから、必要に応じてimage_fileとdata_fileの処理を追加できます
+    attachments = {}
+    if image_file:
+        attachments["image.png"] = image_file
+        print(f"Received image: {image_file.filename}")
+    if data_file:
+        attachments["data.csv"] = data_file
+        print(f"Received data: {data_file.filename}")
+    
     try:
         plan = await interpret_instructions(questions_text)
-        context = await fetch_and_prepare(plan, {})
+        # attachmentsをfetch_and_prepareに渡すように修正
+        context = await fetch_and_prepare(plan, attachments) 
         answer = await answer_with_llm(plan, context)
         return JSONResponse(answer)
     except Exception as e:
