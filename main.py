@@ -192,7 +192,7 @@ app = FastAPI()
 
 @app.post("/api/")
 async def handle_request(questions_txt: UploadFile = File(...)):
-    print(f"Received file: {questions_txt.filename}")
+    print(f"Received file: {questions_dot_txt.filename}")
     content = await questions_txt.read()
     questions_text = content.decode("utf-8", errors="ignore")
     print(f"questions.txt content length: {len(questions_text)}")
