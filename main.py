@@ -186,18 +186,11 @@ async def answer_with_llm(plan: Dict[str, Any], context: Dict[str, Any]) -> Any:
 # ======================
 app = FastAPI()
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
-import json
-from typing import Optional # Optionalをインポート
-
-# ... (既存のFastAPIとCORSの設定、LLM関連の関数など) ...
-
 @app.post("/api/")
 async def handle_request(
-    questions_file: UploadFile = File(..., alias="questions.txt"),
-    image_file: Optional[UploadFile] = File(None, alias="image.png"), # Optionalにして、画像がない場合も対応
-    data_file: Optional[UploadFile] = File(None, alias="data.csv")   # Optionalにして、CSVがない場合も対応
+    questions_file: UploadFile = File(..., alias="questions.txt"), #questions.txt is must
+    image_file: Optional[UploadFile] = File(None, alias="image.png"), # Optional
+    data_file: Optional[UploadFile] = File(None, alias="data.csv")   # Optional
 ):
     print(f"Received file: {questions_file.filename}")
     content = await questions_file.read()
@@ -208,7 +201,6 @@ async def handle_request(
     if not questions_text:
         raise HTTPException(status_code=400, detail="questions.txt required")
 
-    # ここから、必要に応じてimage_fileとdata_fileの処理を追加できます
     attachments = {}
     if image_file:
         attachments["image.png"] = image_file
@@ -219,7 +211,6 @@ async def handle_request(
     
     try:
         plan = await interpret_instructions(questions_text)
-        # attachmentsをfetch_and_prepareに渡すように修正
         context = await fetch_and_prepare(plan, attachments) 
         answer = await answer_with_llm(plan, context)
         return JSONResponse(answer)
@@ -230,4 +221,3 @@ async def handle_request(
         if fast and is_json_string(fast):
             return JSONResponse(json.loads(fast))
         return JSONResponse({"detail": "Sorry I cannot find the answer"})
-
