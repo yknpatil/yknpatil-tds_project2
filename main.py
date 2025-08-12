@@ -56,7 +56,7 @@ async def aipipe_call(prompt: str, max_tokens: int = 1000) -> str:
     """
     url = "https://api.aipipe.com/v1/llm/generate"
     headers = {
-        "Authorization": f"Bearer {AIPIPE_}",
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
