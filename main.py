@@ -34,7 +34,7 @@ app.add_middleware(
 # ======================
 # LLM Credentials
 # ======================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_API_TOKEN_HERE") # Set as env var in prod
+OPENAI_API_KEY = os.getenv("AIPIPE_TOKEN", "YOUR_API_TOKEN_HERE") # Set as env var in prod
 
 # ======================
 # Utilities
@@ -56,7 +56,7 @@ async def aipipe_call(prompt: str, max_tokens: int = 1000) -> str:
     """
     url = "https://api.aipipe.com/v1/llm/generate"
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Authorization": f"Bearer {AIPIPE_TOKEN}",
         "Content-Type": "application/json"
     }
     payload = {
